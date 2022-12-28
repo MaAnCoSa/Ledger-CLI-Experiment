@@ -1,0 +1,18 @@
+; -*- ledger -*-
+
+2010/12/01 * Checking balance
+  Assets:Checking                   $1,000.00
+  Equity:Opening Balances
+
+2010/12/20 * Organic Co-op
+  Expenses:Food:Groceries             $ 37.50  ; [=2011/01/01]
+  Expenses:Food:Groceries             $ 37.50  ; [=2011/02/01]
+  Expenses:Food:Groceries             $ 37.50  ; [=2011/03/01]
+  Expenses:Food:Groceries             $ 37.50  ; [=2011/04/01]
+  Expenses:Food:Groceries             $ 37.50  ; [=2011/05/01]
+  Expenses:Food:Groceries             $ 37.50  ; [=2011/06/01]
+  Assets:Checking                   $ -225.00
+
+2011/01/19 Grocery Store
+  Expenses:Food:Groceries             $ 44.00 ; hastag: not block
+  Assets:Checking
