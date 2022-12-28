@@ -86,8 +86,8 @@ for i in file:
                         'transactions': []})
 
 # -----------------------------------------------------------------------------------------------------------------
-
 # REG command - to display a table of all transactions.
+
 @app.command("reg")
 def reg():
     register()
@@ -117,26 +117,73 @@ def register():
                             journal[i]["transactions"][j]["unit"],
                             total])
 
+    print("")
     print(tabulate(table))
+    print("")
 
+# -----------------------------------------------------------------------------------------------------------------
+# BAL command - to display a list of all accounts and their balances.
 
+# This function creates a directory with all balances.
+def set_act(accounts, ls, i, j):
+    ban = 0
+    cur_act = 0
+    if len(accounts) != 0:
+        for k in range(len(accounts)):
+            if ls[0] == accounts[k]["account"]:
+                accounts[k]["amount"] += journal[i]["transactions"][j]["amount"]
+                cur_act = k
+                break
+            elif len(accounts) == (k + 1):
+                ban = 1
+    if ban == 1 or len(accounts) == 0:
+        accounts.append({"account": ls[0], "amount": journal[i]["transactions"][j]["amount"], "subact": []})
+        cur_act = len(accounts) - 1
 
+    if len(ls) > 1:
+        ls.pop(0)
+        set_act(accounts[cur_act]["subact"], ls, i, j)
+
+# This function iterates over the directory created and prints each balance in the correct format.
+def print_act(accounts, step):
+    sp = ""
+    for j in range(step):
+            sp += "  "
+    
+    for i in range(len(accounts)):
+        amt = accounts[i]["amount"]
+        act = sp + accounts[i]["account"]
+        print("{:>15.2f}{:<10}".format(amt, act))
+
+        if len(accounts[i]["subact"]) > 0:
+            print_act(accounts[i]["subact"], step+1)
+    
+# This is the Balance functino itself.
 @app.command("bal")
 def bal():
     balance()
 
 @app.command("balance")
 def balance():
-    print("Balance command")
-    # table = []
-    # accounts = []
-    # for i in range(len(journal)):
-    #     n = len(journal[i]["transactions"])
-    #     for j in range(n):
-    #         ls = journal[i]["transactions"][j]["account"].split(":")
-    #         print(ls)
-    #         for k in range(len(ls)):
-                
+    table = []
+    accounts = []
+    for i in range(len(journal)):
+        n = len(journal[i]["transactions"])
+        for j in range(n):
+            ls = journal[i]["transactions"][j]["account"].split(":")
+            set_act(accounts, ls, i, j)
+
+    total = 0.0
+    for i in range(len(accounts)):
+        total += accounts[i]["amount"]
+    step = 0
+    print("")
+    print_act(accounts, step)
+    print("   ------------")
+    print("{:>15.2f}\n".format(total))
+
+    
+             
 
 if __name__ == '__main__':
     app()
