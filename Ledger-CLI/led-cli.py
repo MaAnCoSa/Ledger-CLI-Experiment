@@ -4,11 +4,22 @@ from tabulate import tabulate
 
 app = typer.Typer()
 
-# This section will read the journal file and save the data in a list of dictionaries.
+# This callback functions makes it possible for common options (or common flags) to be available.
+@app.callback()
+def main(
+    ctx: typer.Context,
+    sort: str = typer.Option("--sort", "-s", help=" Sorts results by desigantion."),
+    file: str = typer.Option("--file", "-f", help=" Designate the journal file path.")
+    ):
+
+    ctx.obj = SimpleNamespace(sort = sort, file = file)
+
+
+# This functions will read the journal file and save the data in a list of dictionaries whenever
+# a command begins.
 # -----------------------------------------------------------------------------------------------------------------
 lines = []
 journal = []
-
 
 def get_amt(ls):
     if len(ls[0]) != 1:
@@ -27,79 +38,84 @@ def get_amt(ls):
 
         return [unit, float(amt)]
 
-file = open("test.dat", "r")
-#file = open("./ledger-sample-files/Income.ledger", "r")
-ind = -1
-for i in file:
-    ind += 1
-    lines.append(i.replace("\n", "").replace(",", '').replace("\t", "    "))
-    ln = lines[ind].split(' ')
+def get_data(ctx):
+    # Unless a specific file is declared, it will read a default path.
+    if ctx.obj.file != "--file":
+        file = open(ctx.obj.file, "r")
+    else:
+        file = open("test.dat", "r")
+
+    #file = open("test.dat", "r")
+    #file = open("./ledger-sample-files/Income.ledger", "r")
+    ind = -1
+    for i in file:
+        ind += 1
+        lines.append(i.replace("\n", "").replace(",", '').replace("\t", "    "))
+        ln = lines[ind].split(' ')
 
 
-    # If an line is a comment, we ignore it.
-    if len(ln) == 1:
-        pass
-    elif ln[0] == ';':
-        pass
+        # If an line is a comment, we ignore it.
+        if len(ln) == 1:
+            pass
+        elif ln[0] == ';':
+            pass
     
-    # If an entry begins with a tab, then it is a transaction to be appended to the last entry in the journal.
-    elif ln[0] == '':
-        while ln[0] == '':
-            ln.pop(0)
-
-        if ln[0] == ';':
-            break
-
-        act = ''
-        while ln[0] != '':
-            act += ' ' + ln[0]
-            ln.pop(0)
-            if len(ln) == 0: break
-
-        if len(ln) != 0:
+        # If an entry begins with a tab, then it is a transaction to be appended to the last entry in the journal.
+        elif ln[0] == '':
             while ln[0] == '':
                 ln.pop(0)
 
-            ls = get_amt(ln)
-            unit = ls[0]
-            amt = ls[1]
-        else:
-            amt = 0
-            n = len(journal[len(journal)-1]["transactions"])
-            for j in range(n):
-                amt += journal[len(journal)-1]["transactions"][j]["amount"]
-            amt *= (-1)
-            unit = journal[len(journal)-1]["transactions"][0]["unit"]
+            if ln[0] == ';':
+                break
+
+            act = ''
+            while ln[0] != '':
+                act += ' ' + ln[0]
+                ln.pop(0)
+                if len(ln) == 0: break
+
+            if len(ln) != 0:
+                while ln[0] == '':
+                    ln.pop(0)
+
+                ls = get_amt(ln)
+                unit = ls[0]
+                amt = ls[1]
+            else:
+                amt = 0
+                n = len(journal[len(journal)-1]["transactions"])
+                for j in range(n):
+                    amt += journal[len(journal)-1]["transactions"][j]["amount"]
+                amt *= (-1)
+                unit = journal[len(journal)-1]["transactions"][0]["unit"]
         
-        journal[len(journal)-1]["transactions"].append({"ind": ind,
-                                                        "account": act.strip(),
-                                                        "unit": unit,
-                                                        "amount": amt})
+            journal[len(journal)-1]["transactions"].append({"ind": ind,
+                                                            "account": act.strip(),
+                                                            "unit": unit,
+                                                            "amount": amt})
 
 
-    # If a line begin with a date (not a tab), then it we create an entry on the journal object.
-    else:
-        date = datetime.strptime(ln[0], '%Y/%m/%d').date()
-        dt = date.strftime('%Y-%b-%d')
-        if ln[1] == '*':
-            cpt = lines[ind].split(' * ')[1]
+        # If a line begins with a date (not a tab), then we create an entry on the journal object.
         else:
-            ln.pop(0)
-            cpt = " ".join(ln)
-        journal.append({'ind': ind,
-                        'date': dt,
-                        'concept': cpt,
-                        'transactions': []})
+            date = datetime.strptime(ln[0], '%Y/%m/%d').date()
+            dt = date.strftime('%Y-%b-%d')
+            if ln[1] == '*':
+                cpt = lines[ind].split(' * ')[1]
+            else:
+                ln.pop(0)
+                cpt = " ".join(ln)
+            journal.append({'ind': ind,
+                            'date': dt,
+                            'concept': cpt,
+                            'transactions': []})
 
 # -----------------------------------------------------------------------------------------------------------------
 # REG command - to display a table of all transactions.
 
-@app.command("reg")
-def reg():
-    register()
+@app.command("reg", help="Displays registers from the journal.")
+def register(ctx: typer.Context):
+    get_data(ctx)
 
-@app.command("register")
-def register():
     table = []
     total = 0.00
     for i in range(len(journal)):
@@ -166,12 +182,10 @@ def print_act(accounts, step):
             print_act(accounts[i]["subact"], step+1)
     
 # This is the Balance functino itself.
-@app.command("bal")
-def bal():
-    balance()
+@app.command("bal", help="Displays the balance for each account and its subaccounts.")
+def balance(ctx: typer.Context):
+    get_data(ctx)
 
-@app.command("balance")
-def balance():
     accounts = []
     for i in range(len(journal)):
         n = len(journal[i]["transactions"])
@@ -186,14 +200,18 @@ def balance():
     print("")
     print_act(accounts, step)
     print("   -----------------")
-    print("{:>15.2f}\n".format(total))
+    print("{:>20.2f}\n".format(total))
 
 
 # -----------------------------------------------------------------------------------------------------------------
 # PRINT command - to display all journal entries.
 
-@app.command("print")
-def prnt():
+@app.command("print", help="Prints out entries from the journal.")
+def prnt(ctx: typer.Context):
+    get_data(ctx)
+
+    #print(ctx.obj.file)
+
     print("")
     for i in range(len(journal)):
         start = journal[i]["ind"]
@@ -205,8 +223,8 @@ def prnt():
         for j in range(end-start):
             print(lines[start+j])
         print("")
-           
 
+        
 if __name__ == '__main__':
     app()
 
