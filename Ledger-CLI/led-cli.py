@@ -1,6 +1,7 @@
 import typer
 from datetime import datetime
 from tabulate import tabulate
+from types import SimpleNamespace
 
 app = typer.Typer()
 
@@ -9,34 +10,53 @@ app = typer.Typer()
 def main(
     ctx: typer.Context,
     sort: str = typer.Option("--sort", "-s", help=" Sorts results by desigantion."),
-    file: str = typer.Option("--file", "-f", help=" Designate the journal file path.")
+    file: str = typer.Option("--file", "-f", help=" Designate the journal file path."),
+    price_db: str = typer.Option("--price-db", help=" Converts commodities by prices in designated file.")
     ):
 
-    ctx.obj = SimpleNamespace(sort = sort, file = file)
+    ctx.obj = SimpleNamespace(sort = sort, file = file, price_db = price_db)
 
 
 # This functions will read the journal file and save the data in a list of dictionaries whenever
 # a command begins.
 # -----------------------------------------------------------------------------------------------------------------
 lines = []
+lines_db = []
 journal = []
+commodities = []
 
-def get_amt(ls):
-    if len(ls[0]) != 1:
-        li = [*ls[0]]
-        unit = li[0]
-        li.pop(0)
-        amt = ''.join(li)
-        
-        return [unit, float(amt)]
+hom_cur = '$'
+
+def get_amt(ln):
+    if ln[0].isdigit():
+        amt = ln[0]
+        ln.pop(0)
+        while ln[0] == '':
+            ln.pop(0)
+        unit = ln[0]
     else:
-        unit = ls[0]
-        ls.pop(0)
-        while ls[0] == '':
-            ls.pop(0)
-        amt = ls[0]
+        li = [*ln[0]]
+        if li[0].isdigit():
+            amt = ''
+            while li[0].isdigit() or li[0] == '.':
+                amt += li[0]
+                li.pop(0)
+            unit = ''.join(li)
+        else:
+            unit = ''
+            while not li[0].isdigit():
+                unit += li[0]
+                li.pop(0)
+                if len(li) == 0:
+                    ln.pop(0)
+                    while ln[0] == '':
+                        ln.pop(0)
+                    amt = ln[0]
+                    return [unit, float(amt)]
+            amt = ''.join(li)
 
-        return [unit, float(amt)]
+    return [unit, float(amt)]
+
 
 def get_data(ctx):
     # Unless a specific file is declared, it will read a default path.
@@ -45,8 +65,70 @@ def get_data(ctx):
     else:
         file = open("test.dat", "r")
 
-    #file = open("test.dat", "r")
-    #file = open("./ledger-sample-files/Income.ledger", "r")
+    # If the price_db tag was called, this opens the file with the commodities' prices.
+    if ctx.obj.price_db != "--price-db":
+        db_file = open(ctx.obj.price_db, "r")
+
+        global hom_cur
+
+        ind = -1
+        for i in db_file:
+            ind += 1
+            lines_db.append(i.replace("\n", ""))
+            ln = lines_db[ind].split(" ")
+
+            # Tag to declare main currency (or home currency).
+            if ln[0] == 'N':
+                while ln[0] == "":
+                    ln.pop(0)
+                hom_cur = ln[0]
+
+            # Tag to declare a commodity and its price.
+            if ln[0] == 'P':
+                ln.pop(0)
+                while ln[0] == "":
+                    ln.pop(0)
+                date = datetime.strptime(ln[0], '%Y/%m/%d').date()
+                dt = date.strftime('%Y-%b-%d')
+
+                ln.pop(0)
+                while ln[0] == "":
+                    ln.pop(0)
+                time = datetime.strptime(ln[0], '%H:%M:%S').time()
+                tm = time.strftime('%H:%M:%S')
+
+                ln.pop(0)
+                while ln[0] == "":
+                    ln.pop(0)
+                com = ln[0]
+
+                ln.pop(0)
+                while ln[0] == "":
+                    ln.pop(0)
+                price = ln[0].replace(",", "")
+                val = price.split(" ")
+                if len(val) == 1:
+                    aux = list(val[0])
+                    unit = aux.pop(0)
+                    price = "".join(aux)
+                elif val[0] == '$':
+                    unit = val[0]
+                    val.pop(0)
+                    while val[0] == '':
+                        val.pop(0)
+                    price = val[0]
+                else:
+                    price = val[0]
+                    val.pop(0)
+                    while val[0] == '':
+                        val.pop(0)
+                    unit = val[0]
+
+                commodities.append({"date": dt+" "+tm, "commodities": [com, unit], "price": [1, float(price)]})
+    
+        commodities.sort(key=lambda dir : dir["date"])
+    
+
     ind = -1
     for i in file:
         ind += 1
@@ -74,6 +156,7 @@ def get_data(ctx):
                 ln.pop(0)
                 if len(ln) == 0: break
 
+            
             if len(ln) != 0:
                 while ln[0] == '':
                     ln.pop(0)
@@ -81,18 +164,41 @@ def get_data(ctx):
                 ls = get_amt(ln)
                 unit = ls[0]
                 amt = ls[1]
+
+                if ctx.obj.price_db != "--price-db" and len(commodities) != 0:
+                    for x in range(len(commodities)):
+                        if unit == commodities[x]["commodities"][0]:
+                            unit = commodities[x]["commodities"][1]
+                            amt = (amt * commodities[x]["price"][0]) / commodities[x]["price"][1]
+
+                journal[len(journal)-1]["transactions"].append({"ind": ind,
+                                                                "account": act.strip(),
+                                                                "unit": unit,
+                                                                "amount": amt})
             else:
-                amt = 0
+                units = []
                 n = len(journal[len(journal)-1]["transactions"])
+
                 for j in range(n):
-                    amt += journal[len(journal)-1]["transactions"][j]["amount"]
-                amt *= (-1)
-                unit = journal[len(journal)-1]["transactions"][0]["unit"]
-        
-            journal[len(journal)-1]["transactions"].append({"ind": ind,
-                                                            "account": act.strip(),
-                                                            "unit": unit,
-                                                            "amount": amt})
+                    ban = 0
+                    if len(units) != 0:
+                        for x in range(len(units)):
+                            if units[x] != journal[len(journal)-1]["transactions"][j]["unit"]:
+                                ban += 1
+                    if ban == len(units) or len(units) == 0:
+                            units.append(journal[len(journal)-1]["transactions"][j]["unit"])
+
+                for x in range(len(units)):
+                    amt = 0
+                    for j in range(n):
+                        if journal[len(journal)-1]["transactions"][j]["unit"] == units[x]:
+                            amt += (journal[len(journal)-1]["transactions"][j]["amount"] * (-1))
+                    
+                    journal[len(journal)-1]["transactions"].append({"ind": ind,
+                                                                    "account": act.strip(),
+                                                                    "unit": units[x],
+                                                                    "amount": amt})
+
 
 
         # If a line begins with a date (not a tab), then we create an entry on the journal object.
@@ -108,6 +214,11 @@ def get_data(ctx):
                             'date': dt,
                             'concept': cpt,
                             'transactions': []})
+    
+    if 'd' in ctx.obj.sort:
+        journal.sort(key=lambda dir : dir["date"])
+    
+
 
 # -----------------------------------------------------------------------------------------------------------------
 # REG command - to display a table of all transactions.
@@ -117,11 +228,29 @@ def register(ctx: typer.Context):
     get_data(ctx)
 
     table = []
-    total = 0.00
+    total = []
     for i in range(len(journal)):
+
+        if 'a' in ctx.obj.sort:
+            journal[i]["transactions"].sort(key=lambda dir : dir["amount"])
+
         n = len(journal[i]["transactions"])
         for j in range(n):
-            total += journal[i]["transactions"][j]["amount"]
+
+            ban = 0
+            if len(total) != 0:
+                for x in range(len(total)):
+                    if total[x][0] == journal[i]["transactions"][j]["unit"]:
+                        total[x][1] += journal[i]["transactions"][j]["amount"]
+                        cur_tot = x
+                    else:
+                        ban += 1
+            if len(total) == 0 or ban == len(total):
+                total.append([journal[i]["transactions"][j]["unit"],
+                                journal[i]["transactions"][j]["amount"]])
+                cur_tot = len(total)-1
+
+
             if j == 0:
                 table.append([journal[i]["date"],
                             journal[i]["concept"],
@@ -129,7 +258,7 @@ def register(ctx: typer.Context):
                             journal[i]["transactions"][j]["unit"],
                             journal[i]["transactions"][j]["amount"],
                             journal[i]["transactions"][j]["unit"],
-                            total])
+                            total[cur_tot][1]])
             else:
                 table.append(['',
                             '',
@@ -137,7 +266,7 @@ def register(ctx: typer.Context):
                             journal[i]["transactions"][j]["unit"],
                             journal[i]["transactions"][j]["amount"],
                             journal[i]["transactions"][j]["unit"],
-                            total])
+                            total[cur_tot][1]])
 
     print("")
     print(tabulate(table))
@@ -150,17 +279,31 @@ def register(ctx: typer.Context):
 # This function creates a directory with all balances.
 def set_act(accounts, ls, i, j):
     ban = 0
+    ban2 = 0
     cur_act = 0
+
     if len(accounts) != 0:
         for k in range(len(accounts)):
             if ls[0] == accounts[k]["account"]:
-                accounts[k]["amount"] += journal[i]["transactions"][j]["amount"]
-                cur_act = k
-                break
-            elif len(accounts) == (k + 1):
-                ban = 1
-    if ban == 1 or len(accounts) == 0:
-        accounts.append({"account": ls[0], "amount": journal[i]["transactions"][j]["amount"], "subact": []})
+                for x in range(len(accounts[k]["amounts"])):
+                    if journal[i]["transactions"][j]["unit"] == accounts[k]["amounts"][x]["unit"]:
+                        accounts[k]["amounts"][x]["amount"] += journal[i]["transactions"][j]["amount"]
+                        cur_act = k
+                    
+                    else:
+                        ban2 += 1
+
+                if ban2 == len(accounts[k]["amounts"]):
+                    accounts[k]["amounts"].append({"unit": journal[i]["transactions"][j]["unit"],
+                                                    "amount": journal[i]["transactions"][j]["amount"]})
+                    cur_act = k
+            else:
+                ban += 1
+    if ban == len(accounts) or len(accounts) == 0:
+        accounts.append({"account": ls[0],
+                        "amounts": [{"unit": journal[i]["transactions"][j]["unit"],
+                                    "amount": journal[i]["transactions"][j]["amount"]}],
+                        "subact": []})
         cur_act = len(accounts) - 1
 
     if len(ls) > 1:
@@ -174,9 +317,14 @@ def print_act(accounts, step):
             sp += "  "
     
     for i in range(len(accounts)):
-        amt = accounts[i]["amount"]
-        act = sp + accounts[i]["account"]
-        print("{:>20.2f}{:<10}".format(amt, act))
+        for j in range(len(accounts[i]["amounts"])):
+            unit = accounts[i]["amounts"][j]["unit"]
+            amt = accounts[i]["amounts"][j]["amount"]
+            if j == len(accounts[i]["amounts"]) - 1:
+                act = sp + accounts[i]["account"]
+                print("{:>20.2f} {:<5}{:<10}".format(amt, unit, act))
+            else:
+                print("{:>20.2f} {:<5}".format(amt, unit))
 
         if len(accounts[i]["subact"]) > 0:
             print_act(accounts[i]["subact"], step+1)
@@ -192,15 +340,33 @@ def balance(ctx: typer.Context):
         for j in range(n):
             ls = journal[i]["transactions"][j]["account"].split(":")
             set_act(accounts, ls, i, j)
+    
+    
+    if 'a' in ctx.obj.sort:
+        accounts.sort(key=lambda dir : dir["amounts"][0]["amount"])
 
-    total = 0.0
+    total = []
     for i in range(len(accounts)):
-        total += accounts[i]["amount"]
+        for j in range(len(accounts[i]["amounts"])):
+            if len(total) != 0:
+                ban = 0
+                for k in range(len(total)):
+                    if total[k][0] == accounts[i]["amounts"][j]["unit"]:
+                        total[k][1] += accounts[i]["amounts"][j]["amount"]
+                    elif k == len(total)-1:
+                        ban += 1
+            if len(total) == 0 or ban == len(total):
+                total.append([accounts[i]["amounts"][j]["unit"],
+                                accounts[i]["amounts"][j]["amount"]])
+
     step = 0
     print("")
     print_act(accounts, step)
-    print("   -----------------")
-    print("{:>20.2f}\n".format(total))
+    print("   -----------------------")
+
+    for i in range(len(total)):
+        print("{:>20.2f} {:<5}".format(total[i][1], total[i][0]))
+    print("")
 
 
 # -----------------------------------------------------------------------------------------------------------------
@@ -210,21 +376,17 @@ def balance(ctx: typer.Context):
 def prnt(ctx: typer.Context):
     get_data(ctx)
 
-    #print(ctx.obj.file)
-
     print("")
     for i in range(len(journal)):
+
         start = journal[i]["ind"]
-        if len(journal) == (i + 1):
-            end = len(lines)
-        else:
-            n = len(journal[i]["transactions"])
-            end = journal[i]["transactions"][n-1]["ind"]+1
-        for j in range(end-start):
+        n = len(journal[i]["transactions"])
+        end = journal[i]["transactions"][n-1]["ind"]
+
+        for j in range(end+1-start):
             print(lines[start+j])
         print("")
 
-        
+
 if __name__ == '__main__':
     app()
-
