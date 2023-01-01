@@ -30,14 +30,15 @@ commodities = []
 hom_cur = '$'
 
 def get_amt(ln):
-    if ln[0].isdigit():
+    li = [*ln[0]]
+    if li[0].isdigit():
         amt = ln[0]
         ln.pop(0)
         while ln[0] == '':
             ln.pop(0)
         unit = ln[0]
     else:
-        li = [*ln[0]]
+        #li = [*ln[0]]
         if li[0].isdigit():
             amt = ''
             while li[0].isdigit() or li[0] == '.':
@@ -137,7 +138,6 @@ def get_data(ctx):
         ind += 1
         lines.append(i.replace("\n", "").replace(",", '').replace("\t", "    "))
         ln = lines[ind].split(' ')
-
 
         # If an line is a comment, we ignore it.
         if len(ln) == 1: pass
