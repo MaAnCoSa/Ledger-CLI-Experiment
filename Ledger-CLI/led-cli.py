@@ -11,10 +11,12 @@ def main(
     ctx: typer.Context,
     sort: str = typer.Option("--sort", "-s", help=" Sorts results by desigantion."),
     file: str = typer.Option("--file", "-f", help=" Designate the journal file path."),
+    b: str = typer.Option("--begin", "-b", help=" [YYYY-MM-DD] Filters to only entries after the given date."),
+    e: str = typer.Option("--end", "-e", help=" [YYYY-MM-DD] Filters to only entries after the given date."),
     price_db: str = typer.Option("--price-db", help=" Converts commodities by prices in designated file.")
     ):
 
-    ctx.obj = SimpleNamespace(sort = sort, file = file, price_db = price_db)
+    ctx.obj = SimpleNamespace(sort = sort, file = file, price_db = price_db, b = b, e = e)
 
 
 # This functions will read the journal file and save the data in a list of dictionaries whenever
@@ -28,14 +30,15 @@ commodities = []
 hom_cur = '$'
 
 def get_amt(ln):
-    if ln[0].isdigit():
+    li = [*ln[0]]
+    if li[0].isdigit():
         amt = ln[0]
         ln.pop(0)
         while ln[0] == '':
             ln.pop(0)
         unit = ln[0]
     else:
-        li = [*ln[0]]
+        #li = [*ln[0]]
         if li[0].isdigit():
             amt = ''
             while li[0].isdigit() or li[0] == '.':
@@ -63,7 +66,8 @@ def get_data(ctx):
     if ctx.obj.file != "--file":
         file = open(ctx.obj.file, "r")
     else:
-        file = open("test.dat", "r")
+        file = open("journal.dat", "r")
+
 
     # If the price_db tag was called, this opens the file with the commodities' prices.
     if ctx.obj.price_db != "--price-db":
@@ -135,12 +139,10 @@ def get_data(ctx):
         lines.append(i.replace("\n", "").replace(",", '').replace("\t", "    "))
         ln = lines[ind].split(' ')
 
-
         # If an line is a comment, we ignore it.
-        if len(ln) == 1:
-            pass
-        elif ln[0] == ';':
-            pass
+        if len(ln) == 1: pass
+        elif ln[0] == ';': pass
+        elif ln[0] == '=': pass
     
         # If an entry begins with a tab, then it is a transaction to be appended to the last entry in the journal.
         elif ln[0] == '':
@@ -223,15 +225,30 @@ def get_data(ctx):
 # -----------------------------------------------------------------------------------------------------------------
 # REG command - to display a table of all transactions.
 
-@app.command("reg", help="Displays registers from the journal.")
+@app.command("reg", help=" [\"keyword keyword ...\"] Displays registers from the journal.")
 def register(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
+
+    b_date = datetime.strptime("1000-01-01", '%Y-%m-%d').date()
+    e_date = datetime.strptime("9999-12-31", '%Y-%m-%d').date()
+
+    if ctx.obj.b != '--begin':
+        b_date = datetime.strptime(ctx.obj.b, '%Y-%m-%d').date()
+
+    if ctx.obj.e != '--end':
+        e_date = datetime.strptime(ctx.obj.e, '%Y-%m-%d').date()
+
 
     flts = filters.split(" ")
 
     table = []
     total = []
     for i in range(len(journal)):
+
+        date = datetime.strptime(journal[i]["date"], '%Y-%b-%d').date()
+
+        if date < b_date or date > e_date:
+            continue
 
         if 'a' in ctx.obj.sort:
             journal[i]["transactions"].sort(key=lambda dir : dir["amount"])
@@ -368,7 +385,7 @@ def print_loop(accounts, step):
             print_loop(accounts[i]["subact"], step+1)
 
 # This is the Balance functino itself.
-@app.command("bal", help="Displays the balance for each account and its subaccounts.")
+@app.command("bal", help=" [\"keyword keyword ...\"] Displays the balance for each account and its subaccounts.")
 def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
 
@@ -418,14 +435,28 @@ def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
 # -----------------------------------------------------------------------------------------------------------------
 # PRINT command - to display all journal entries.
 
-@app.command("print", help="Prints out entries from the journal.")
+@app.command("print", help=" [\"keyword keyword ...\"] Prints out entries from the journal.")
 def prnt(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
+
+    b_date = datetime.strptime("1000-01-01", '%Y-%m-%d').date()
+    e_date = datetime.strptime("9999-12-31", '%Y-%m-%d').date()
+
+    if ctx.obj.b != '--begin':
+        b_date = datetime.strptime(ctx.obj.b, '%Y-%m-%d').date()
+
+    if ctx.obj.e != '--end':
+        e_date = datetime.strptime(ctx.obj.e, '%Y-%m-%d').date()
 
     flts = filters.split(" ")
 
     print("")
     for i in range(len(journal)):
+
+        date = datetime.strptime(journal[i]["date"], '%Y-%b-%d').date()
+
+        if date < b_date or date > e_date:
+            continue
 
         ban1 = 0
         cpt_flt = 0
