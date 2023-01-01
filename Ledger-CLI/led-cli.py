@@ -224,8 +224,10 @@ def get_data(ctx):
 # REG command - to display a table of all transactions.
 
 @app.command("reg", help="Displays registers from the journal.")
-def register(ctx: typer.Context):
+def register(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
+
+    flts = filters.split(" ")
 
     table = []
     total = []
@@ -233,9 +235,18 @@ def register(ctx: typer.Context):
 
         if 'a' in ctx.obj.sort:
             journal[i]["transactions"].sort(key=lambda dir : dir["amount"])
-
+        
         n = len(journal[i]["transactions"])
+        ban = 0
         for j in range(n):
+
+            ban1 = 0
+            for x in flts:
+                if not ((x in journal[i]["concept"]) or (x in journal[i]["transactions"][j]["account"] or x == 'all')):
+                    ban1 += 1
+
+            if ban1 == len(flts):
+                continue
 
             ban = 0
             if len(total) != 0:
@@ -249,7 +260,6 @@ def register(ctx: typer.Context):
                 total.append([journal[i]["transactions"][j]["unit"],
                                 journal[i]["transactions"][j]["amount"]])
                 cur_tot = len(total)-1
-
 
             if j == 0:
                 table.append([journal[i]["date"],
@@ -267,6 +277,7 @@ def register(ctx: typer.Context):
                             journal[i]["transactions"][j]["amount"],
                             journal[i]["transactions"][j]["unit"],
                             total[cur_tot][1]])
+
 
     print("")
     print(tabulate(table))
@@ -311,12 +322,20 @@ def set_act(accounts, ls, i, j):
         set_act(accounts[cur_act]["subact"], ls, i, j)
 
 # This function iterates over the directory created and prints each balance in the correct format.
-def print_act(accounts, step):
+def print_act(accounts, step, flts):
     sp = "  "
     for j in range(step):
             sp += "  "
     
     for i in range(len(accounts)):
+        if step == 0:
+            ban1 = 0
+            for x in flts:
+                if not (x in accounts[i]["account"] or x == 'all'):
+                    ban1 += 1
+            if ban1 == len(flts):
+                continue
+
         for j in range(len(accounts[i]["amounts"])):
             unit = accounts[i]["amounts"][j]["unit"]
             amt = accounts[i]["amounts"][j]["amount"]
@@ -327,12 +346,14 @@ def print_act(accounts, step):
                 print("{:>20.2f} {:<5}".format(amt, unit))
 
         if len(accounts[i]["subact"]) > 0:
-            print_act(accounts[i]["subact"], step+1)
+            print_act(accounts[i]["subact"], step+1, flts)
     
 # This is the Balance functino itself.
 @app.command("bal", help="Displays the balance for each account and its subaccounts.")
-def balance(ctx: typer.Context):
+def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
+
+    flts = filters.split(" ")
 
     accounts = []
     for i in range(len(journal)):
@@ -347,6 +368,13 @@ def balance(ctx: typer.Context):
 
     total = []
     for i in range(len(accounts)):
+        ban1 = 0
+        for x in flts:
+            if not (x in accounts[i]["account"] or x == 'all'):
+                ban1 += 1
+        if ban1 == len(flts):
+            continue
+
         for j in range(len(accounts[i]["amounts"])):
             if len(total) != 0:
                 ban = 0
@@ -361,7 +389,7 @@ def balance(ctx: typer.Context):
 
     step = 0
     print("")
-    print_act(accounts, step)
+    print_act(accounts, step, flts)
     print("   -----------------------")
 
     for i in range(len(total)):
@@ -373,19 +401,40 @@ def balance(ctx: typer.Context):
 # PRINT command - to display all journal entries.
 
 @app.command("print", help="Prints out entries from the journal.")
-def prnt(ctx: typer.Context):
+def prnt(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
+
+    flts = filters.split(" ")
 
     print("")
     for i in range(len(journal)):
 
-        start = journal[i]["ind"]
-        n = len(journal[i]["transactions"])
-        end = journal[i]["transactions"][n-1]["ind"]
+        ban1 = 0
+        cpt_flt = 0
+        for x in flts:
+            if not (x in journal[i]["concept"] or x == 'all'):
+                ban1 += 1
 
-        for j in range(end+1-start):
-            print(lines[start+j])
-        print("")
+        if ban1 == len(flts):
+            for j in range(len(journal[i]["transactions"])):
+                for x in flts:
+                    if not (x in journal[i]["transactions"][j]["account"] or x == 'all'):
+                        ban1 += 1
+
+            if ban1 == (len(flts)*(len(journal[i]["transactions"])+1)):
+                continue
+            else:
+                print(lines[journal[i]["ind"]])
+                for j in journal[i]["transactions"]:
+                    for x in flts:
+                        if (x in j["account"] or x == 'all'):
+                            print(lines[j["ind"]])
+                print("")
+        else:
+            print(lines[journal[i]["ind"]])
+            for j in journal[i]["transactions"]:
+                print(lines[j["ind"]])
+            print("")
 
 
 if __name__ == '__main__':
