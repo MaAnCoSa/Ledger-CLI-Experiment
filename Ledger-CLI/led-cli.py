@@ -321,21 +321,40 @@ def set_act(accounts, ls, i, j):
         ls.pop(0)
         set_act(accounts[cur_act]["subact"], ls, i, j)
 
+
+
+def check_print(accounts, flts):
+    for i in range(len(accounts)):
+        ban1 = 0
+        for x in flts:
+            if not (x in accounts[i]["account"]) and not (x == 'all'):
+                ban1 += 1
+        if ban1 != len(flts):
+            return True
+        
+    if len(accounts[i]["subact"]) != 0:
+        return check_print(accounts[i]["subact"], flts)
+    
+    return False
+
+
 # This function iterates over the directory created and prints each balance in the correct format.
-def print_act(accounts, step, flts):
+def print_act(accounts, flts):
+    for i in range(len(accounts)):
+        check = check_print([accounts[i]], flts)
+
+        if not check:
+            continue
+
+        print_loop([accounts[i]], 0)
+
+
+def print_loop(accounts, step):
     sp = "  "
     for j in range(step):
             sp += "  "
-    
-    for i in range(len(accounts)):
-        if step == 0:
-            ban1 = 0
-            for x in flts:
-                if not (x in accounts[i]["account"] or x == 'all'):
-                    ban1 += 1
-            if ban1 == len(flts):
-                continue
 
+    for i in range(len(accounts)):
         for j in range(len(accounts[i]["amounts"])):
             unit = accounts[i]["amounts"][j]["unit"]
             amt = accounts[i]["amounts"][j]["amount"]
@@ -346,8 +365,8 @@ def print_act(accounts, step, flts):
                 print("{:>20.2f} {:<5}".format(amt, unit))
 
         if len(accounts[i]["subact"]) > 0:
-            print_act(accounts[i]["subact"], step+1, flts)
-    
+            print_loop(accounts[i]["subact"], step+1)
+
 # This is the Balance functino itself.
 @app.command("bal", help="Displays the balance for each account and its subaccounts.")
 def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
@@ -387,9 +406,8 @@ def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
                 total.append([accounts[i]["amounts"][j]["unit"],
                                 accounts[i]["amounts"][j]["amount"]])
 
-    step = 0
     print("")
-    print_act(accounts, step, flts)
+    print_act(accounts, flts)
     print("   -----------------------")
 
     for i in range(len(total)):
