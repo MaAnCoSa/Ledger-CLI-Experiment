@@ -146,6 +146,10 @@ def get_data(ctx):
         # If an line is a comment, we ignore it.
         if len(ln) == 1: pass
         elif ln[0] == ';': pass
+        elif ln[0] == '#': pass
+        elif ln[0] == '%': pass
+        elif ln[0] == '|': pass
+        elif ln[0] == '*': pass
         elif ln[0] == '=': pass
     
         # If an entry begins with a tab, then it is a transaction to be appended to the last entry in the journal.
