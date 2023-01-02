@@ -2,6 +2,10 @@ import typer
 from datetime import datetime
 from tabulate import tabulate
 from types import SimpleNamespace
+import colorama
+from colorama import Fore, Back, Style
+
+colorama.init(autoreset=True)
 
 app = typer.Typer()
 
@@ -18,10 +22,10 @@ def main(
 
     ctx.obj = SimpleNamespace(sort = sort, file = file, price_db = price_db, b = b, e = e)
 
-
+# -----------------------------------------------------------------------------------------------------------------
 # This functions will read the journal file and save the data in a list of dictionaries whenever
 # a command begins.
-# -----------------------------------------------------------------------------------------------------------------
+
 lines = []
 lines_db = []
 journal = []
@@ -29,6 +33,7 @@ commodities = []
 
 hom_cur = '$'
 
+# This function parses the amunt and currency used on a particular transaction.
 def get_amt(ln):
     li = [*ln[0]]
     if li[0].isdigit():
@@ -38,7 +43,6 @@ def get_amt(ln):
             ln.pop(0)
         unit = ln[0]
     else:
-        #li = [*ln[0]]
         if li[0].isdigit():
             amt = ''
             while li[0].isdigit() or li[0] == '.':
@@ -60,14 +64,14 @@ def get_amt(ln):
 
     return [unit, float(amt)]
 
-
+# This is the main function to parse the journal file. It is the first thing called by any command.
 def get_data(ctx):
+
     # Unless a specific file is declared, it will read a default path.
     if ctx.obj.file != "--file":
         file = open(ctx.obj.file, "r")
     else:
         file = open("journal.dat", "r")
-
 
     # If the price_db tag was called, this opens the file with the commodities' prices.
     if ctx.obj.price_db != "--price-db":
@@ -132,7 +136,7 @@ def get_data(ctx):
     
         commodities.sort(key=lambda dir : dir["date"])
     
-
+    # Now, we parse the journal file.
     ind = -1
     for i in file:
         ind += 1
@@ -167,6 +171,7 @@ def get_data(ctx):
                 unit = ls[0]
                 amt = ls[1]
 
+                # In case the --price-db flag was called, all amounts are converted to the same currency.
                 if ctx.obj.price_db != "--price-db" and len(commodities) != 0:
                     for x in range(len(commodities)):
                         if unit == commodities[x]["commodities"][0]:
@@ -201,8 +206,6 @@ def get_data(ctx):
                                                                     "unit": units[x],
                                                                     "amount": amt})
 
-
-
         # If a line begins with a date (not a tab), then we create an entry on the journal object.
         else:
             date = datetime.strptime(ln[0], '%Y/%m/%d').date()
@@ -221,50 +224,62 @@ def get_data(ctx):
         journal.sort(key=lambda dir : dir["date"])
     
 
-
 # -----------------------------------------------------------------------------------------------------------------
 # REG command - to display a table of all transactions.
 
+# This function formats the numbers as a string.
+def format_amt(num, unit):
+    if unit == '$':
+        amt = ("%.2f  " % num)
+    else:
+        amt = ("%.4f" % num)
+    return amt
+
+# Main function for the REG command.
 @app.command("reg", help=" [\"keyword keyword ...\"] Displays registers from the journal.")
 def register(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
 
+    # In case there is no range of dates declared, these are the limits placed.
     b_date = datetime.strptime("1000-01-01", '%Y-%m-%d').date()
     e_date = datetime.strptime("9999-12-31", '%Y-%m-%d').date()
 
+    # These conditions set the date range in case that filter was given.
     if ctx.obj.b != '--begin':
         b_date = datetime.strptime(ctx.obj.b, '%Y-%m-%d').date()
-
     if ctx.obj.e != '--end':
         e_date = datetime.strptime(ctx.obj.e, '%Y-%m-%d').date()
 
-
+    # We make a list of all filters given.
     flts = filters.split(" ")
 
     table = []
     total = []
     for i in range(len(journal)):
 
+        # If the date of the entry is not in the specified range, it is ignored.
         date = datetime.strptime(journal[i]["date"], '%Y-%b-%d').date()
-
         if date < b_date or date > e_date:
             continue
 
+        # If asked to, this sorts the transactions of each entry by amount.
         if 'a' in ctx.obj.sort:
-            journal[i]["transactions"].sort(key=lambda dir : dir["amount"])
-        
+            journal[i]["transactions"].sort(key=lambda trans : trans["amount"])
+                
         n = len(journal[i]["transactions"])
         ban = 0
+        first = True
         for j in range(n):
 
+            # If the current transaction doesn't include any of the keywords given, it is ignored.
             ban1 = 0
             for x in flts:
                 if not ((x in journal[i]["concept"]) or (x in journal[i]["transactions"][j]["account"] or x == 'all')):
                     ban1 += 1
-
             if ban1 == len(flts):
                 continue
 
+            # The total amount gets calculated for each type of currency involved.
             ban = 0
             if len(total) != 0:
                 for x in range(len(total)):
@@ -278,24 +293,41 @@ def register(ctx: typer.Context, filters: str = typer.Argument("all")):
                                 journal[i]["transactions"][j]["amount"]])
                 cur_tot = len(total)-1
 
-            if j == 0:
+            # If any amount is negative, it is formatted to appear in RED.
+            if journal[i]["transactions"][j]["amount"] < 0:
+                amt = Fore.RED + format_amt(journal[i]["transactions"][j]["amount"], journal[i]["transactions"][j]["unit"]) + Fore.RESET
+                unit = Fore.RED + journal[i]["transactions"][j]["unit"] + Fore.RESET
+            else:
+                amt = format_amt(journal[i]["transactions"][j]["amount"], journal[i]["transactions"][j]["unit"])
+                unit = journal[i]["transactions"][j]["unit"]
+
+            if total[cur_tot][1] < 0:
+                tot_amt = Fore.RED + format_amt(total[cur_tot][1], total[cur_tot][0]) + Fore.RESET
+                tot_unit = Fore.RED + total[cur_tot][0] + Fore.RESET
+            else:
+                tot_amt = format_amt(total[cur_tot][1], total[cur_tot][0])
+                tot_unit = total[cur_tot][0]
+
+            # The rows for the table are prepared.
+            if first:
                 table.append([journal[i]["date"],
                             journal[i]["concept"],
-                            journal[i]["transactions"][j]["account"],
-                            journal[i]["transactions"][j]["unit"],
-                            journal[i]["transactions"][j]["amount"],
-                            journal[i]["transactions"][j]["unit"],
-                            total[cur_tot][1]])
+                            Fore.CYAN + journal[i]["transactions"][j]["account"] + Fore.RESET,
+                            unit,
+                            amt,
+                            tot_unit,
+                            tot_amt])
+                first = False
             else:
                 table.append(['',
                             '',
-                            journal[i]["transactions"][j]["account"],
-                            journal[i]["transactions"][j]["unit"],
-                            journal[i]["transactions"][j]["amount"],
-                            journal[i]["transactions"][j]["unit"],
-                            total[cur_tot][1]])
-
-
+                            Fore.CYAN + journal[i]["transactions"][j]["account"] + Fore.RESET,
+                            unit,
+                            amt,
+                            tot_unit,
+                            tot_amt])
+    
+    # The table itself gets printed.
     print("")
     print(tabulate(table))
     print("")
@@ -310,6 +342,7 @@ def set_act(accounts, ls, i, j):
     ban2 = 0
     cur_act = 0
 
+    # If the accounts list is not empty, it is searched to see if the account already exists.
     if len(accounts) != 0:
         for k in range(len(accounts)):
             if ls[0] == accounts[k]["account"]:
@@ -317,7 +350,6 @@ def set_act(accounts, ls, i, j):
                     if journal[i]["transactions"][j]["unit"] == accounts[k]["amounts"][x]["unit"]:
                         accounts[k]["amounts"][x]["amount"] += journal[i]["transactions"][j]["amount"]
                         cur_act = k
-                    
                     else:
                         ban2 += 1
 
@@ -327,6 +359,7 @@ def set_act(accounts, ls, i, j):
                     cur_act = k
             else:
                 ban += 1
+    # If the account doesn't exist, or even if the accounts list is completely empty, the account gets created.
     if ban == len(accounts) or len(accounts) == 0:
         accounts.append({"account": ls[0],
                         "amounts": [{"unit": journal[i]["transactions"][j]["unit"],
@@ -334,12 +367,12 @@ def set_act(accounts, ls, i, j):
                         "subact": []})
         cur_act = len(accounts) - 1
 
+    # If that account has sub-accounts, then the function calls itself using recursion and filling the sub-accounts list.
     if len(ls) > 1:
         ls.pop(0)
         set_act(accounts[cur_act]["subact"], ls, i, j)
 
-
-
+# This function checks to see if the account has any of the keywords given. If not, it doesn't get printed.
 def check_print(accounts, flts):
     for i in range(len(accounts)):
         ban1 = 0
@@ -365,7 +398,7 @@ def print_act(accounts, flts):
 
         print_loop([accounts[i]], 0)
 
-
+# This function gets called after all filters to finally print the account.
 def print_loop(accounts, step):
     sp = "  "
     for j in range(step):
@@ -377,20 +410,31 @@ def print_loop(accounts, step):
             amt = accounts[i]["amounts"][j]["amount"]
             if j == len(accounts[i]["amounts"]) - 1:
                 act = sp + accounts[i]["account"]
-                print("{:>20.2f} {:<5}{:<10}".format(amt, unit, act))
+                # This formats the amounts in RED if they are negative.
+                if amt < 0:
+                    print(f"{Fore.RED}{amt:>20.2f} {unit:<5}{Fore.CYAN + act:<10}")
+                else:
+                    print(f"{amt:>20.2f} {unit:<5}{Fore.CYAN + act:<10}")
             else:
-                print("{:>20.2f} {:<5}".format(amt, unit))
+                # This formats the amounts in RED if they are negative.
+                if amt < 0:
+                    print(f"{Fore.RED}{amt:>20.2f} {unit:<5}")
+                else:
+                    print(f"{amt:>20.2f} {unit:<5}")
 
+        # If the account has sub-accounts, it calls itself to now fill the sub-accounts list.
         if len(accounts[i]["subact"]) > 0:
             print_loop(accounts[i]["subact"], step+1)
 
-# This is the Balance functino itself.
+# This is the Balance function itself.
 @app.command("bal", help=" [\"keyword keyword ...\"] Displays the balance for each account and its subaccounts.")
 def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
 
+    # We make a list of all the filters given.
     flts = filters.split(" ")
 
+    # First, it creates the accounts list to have all the data needed.
     accounts = []
     for i in range(len(journal)):
         n = len(journal[i]["transactions"])
@@ -398,12 +442,13 @@ def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
             ls = journal[i]["transactions"][j]["account"].split(":")
             set_act(accounts, ls, i, j)
     
-    
+    # If asked to, this sorts all accounts by their total amounts.
     if 'a' in ctx.obj.sort:
         accounts.sort(key=lambda dir : dir["amounts"][0]["amount"])
 
     total = []
     for i in range(len(accounts)):
+        # This checks to see if the account contains any keywords (if given).
         ban1 = 0
         for x in flts:
             if not (x in accounts[i]["account"] or x == 'all'):
@@ -411,6 +456,7 @@ def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
         if ban1 == len(flts):
             continue
 
+        # This calculates the final totals to be printed at the end per currency involved.
         for j in range(len(accounts[i]["amounts"])):
             if len(total) != 0:
                 ban = 0
@@ -422,13 +468,17 @@ def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
             if len(total) == 0 or ban == len(total):
                 total.append([accounts[i]["amounts"][j]["unit"],
                                 accounts[i]["amounts"][j]["amount"]])
-
+    
+    # This prints all accounts and sub-accounts with their respective amounts.
     print("")
     print_act(accounts, flts)
     print("   -----------------------")
-
+    # This prints the final total amounts per involved currency.
     for i in range(len(total)):
-        print("{:>20.2f} {:<5}".format(total[i][1], total[i][0]))
+        if total[i][1] < 0:
+            print(f"{Fore.RED}{total[i][1]:>20.2f} {total[i][0]:<5}{Fore.RESET}")
+        else:
+            print(f"{total[i][1]:>20.2f} {total[i][0]:<5}")
     print("")
 
 
@@ -439,37 +489,39 @@ def balance(ctx: typer.Context, filters: str = typer.Argument("all")):
 def prnt(ctx: typer.Context, filters: str = typer.Argument("all")):
     get_data(ctx)
 
+    # In case there is no range of dates declared, these are the limits placed.
     b_date = datetime.strptime("1000-01-01", '%Y-%m-%d').date()
     e_date = datetime.strptime("9999-12-31", '%Y-%m-%d').date()
 
+    # These conditions set the date range in case that filter was given.
     if ctx.obj.b != '--begin':
         b_date = datetime.strptime(ctx.obj.b, '%Y-%m-%d').date()
-
     if ctx.obj.e != '--end':
         e_date = datetime.strptime(ctx.obj.e, '%Y-%m-%d').date()
 
+    # We make a list of all filters given.
     flts = filters.split(" ")
 
     print("")
     for i in range(len(journal)):
 
+        # If an entry is not in the established date range, it is ignored.
         date = datetime.strptime(journal[i]["date"], '%Y-%b-%d').date()
-
         if date < b_date or date > e_date:
             continue
 
+        # If an entry does not contain any keywords (neither concept nor accounts involved), it is ignored.
+        # If it does contain a keyword (or if there are no keywords as filters), then it prints the entry.
         ban1 = 0
         cpt_flt = 0
         for x in flts:
             if not (x in journal[i]["concept"] or x == 'all'):
                 ban1 += 1
-
         if ban1 == len(flts):
             for j in range(len(journal[i]["transactions"])):
                 for x in flts:
                     if not (x in journal[i]["transactions"][j]["account"] or x == 'all'):
                         ban1 += 1
-
             if ban1 == (len(flts)*(len(journal[i]["transactions"])+1)):
                 continue
             else:
@@ -485,6 +537,6 @@ def prnt(ctx: typer.Context, filters: str = typer.Argument("all")):
                 print(lines[j["ind"]])
             print("")
 
-
+# This is the main function of the CLI, from which all commands are called.
 if __name__ == '__main__':
     app()
